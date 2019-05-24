@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script src="./minesweeper.js"></script>
+        <style>
+            body {
+                height: 100vh;
+                position: relative;
+            }
+
+            body #board {
+                position: absolute;
+                top: 50%; left: 50%;
+                transform: translate(-50%, -50%);
+                border: 1px solid black;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="board"></div>
+    </body>
+    <script>
+        let board = document.getElementById('board');
+        let game = new Minesweeper(board);
+    </script>
+</html>
