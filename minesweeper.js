@@ -1,4 +1,9 @@
 (function(global) {
+    // Local dependency - Requires EventEmitter
+    EventEmitter = global.EventEmitter;
+    if(!EventEmitter)
+        throw new Error("No event emitter found, failed loading Minesweeper.");
+
     // This dictates the size of the cubes and therefore the size of the board.
     const CUBE_SIZE = 20;
 
@@ -20,15 +25,23 @@
         this.boardEl.style.width = (CUBE_SIZE * this.cols) + 'px';
 
         // Initializing game
+        this.onStateChange = new EventEmitter();
         this.init();
     }
 
-    // Statically keeping level info
+    // Statically keeping level info and game states
     Minesweeper.Level = {
         Easy: { rows: 9, cols: 9, bombs: 10 },
         Medium: { rows: 16, cols: 16, bombs: 40 },
         Hard: { rows: 16, cols: 30, bombs: 99 }
-    }
+    };
+
+    Minesweeper.State = {
+        Init: 0,
+        Playing: 1,
+        Done: 2,
+        Lose: 3
+    };
 
     Minesweeper.prototype.init = function() {
         // Clearing element
@@ -50,8 +63,8 @@
             }
         }
 
-        // Board is untouched
-        this.pristine = true;
+        // Finally updating board state
+        this.setState(Minesweeper.State.Init);
     };
 
     Minesweeper.prototype.setBombs = function(exclude) {
@@ -79,9 +92,6 @@
                     this.board[r][c].number = 
                         this.getNeighbors(r, c)
                             .reduce((count, cube) => { return cube.isBomb() ? count + 1 : count }, 0);
-        
-        // Board is no longer pristine
-        this.pristine = false;
     };
 
     Minesweeper.prototype.getNeighbors = function(row, col) {
@@ -94,6 +104,28 @@
                         neighbors.push(this.board[r][c]);
         
         return neighbors;
+    };
+
+    Minesweeper.prototype.lose = function() {
+        this.setState(Minesweeper.State.Lose);
+        for(let row of this.board)
+            for(let cube of row) {
+                if(cube.isBomb()) {
+                    cube.el.innerText = 'X';
+                    cube.el.style.color = 'red';
+                }
+
+                cube.el.removeEventListener('click', cube.listeners.open);
+                cube.el.removeEventListener('dblclick', cube.listeners.openWithNeighbors);
+                cube.el.removeEventListener('contextmenu', cube.listeners.mark);
+            }
+        alert("Lost!");
+    };
+
+    Minesweeper.prototype.setState = function(state) {
+        let prevState = this.state;
+        this.state = state;
+        this.onStateChange.emit(this.state, prevState);
     };
 
     function Cube(board, row, col) {
@@ -119,9 +151,15 @@
         this.el.style.float = 'left';
         
         // Cube events
-        this.el.addEventListener('click', (e) => { this.open(); e.preventDefault(); });
-        this.el.addEventListener('dblclick', (e) => { this.open(true); e.preventDefault(); });
-        this.el.addEventListener('contextmenu', (e) => { this.toggleMark(); e.preventDefault(); return false; });
+        this.listeners = {
+            open: (e) => { this.open(); e.preventDefault(); },
+            openWithNeighbors: (e) => { this.open(true); e.preventDefault(); },
+            mark: (e) => { this.toggleMark(); e.preventDefault(); return false; }
+        };
+
+        this.el.addEventListener('click', this.listeners.open);
+        this.el.addEventListener('dblclick', this.listeners.openWithNeighbors);
+        this.el.addEventListener('contextmenu', this.listeners.mark);
     }
 
     Cube.prototype.isEmpty = function() { return this.number === 0 };
@@ -129,29 +167,44 @@
     Cube.prototype.setBomb = function() { this.number = -1; };
 
     Cube.prototype.open = function(isDblClick) {
-        // Check for pristine board - and init bombs.
-        if(this.board.pristine)
+        // Check for clean board - and set bombs.
+        // Pass the clicked cube to ensure its not assigned a bomb.
+        if(this.board.state === Minesweeper.State.Init) {
             this.board.setBombs(this);
+            this.board.setState(Minesweeper.State.Playing);
+        }
 
         // Locking marked/open cubes
         if(this.isMarked || (this.isOpen && !isDblClick))
             return;
 
-        // If bomb, lose game.
-        if(this.isBomb()) {
-            console.error('LOSE');
-            console.log(this);
-        }
-
         this.isOpen = true;
 
         // If number is 0 (or doubleclick) automatically open all neighbors
-        if(this.number === 0 || isDblClick)
-            this.board.getNeighbors(this.row, this.col).forEach((cube) => { cube.open() });
+        if(this.number === 0 || isDblClick) {
+            let neighbors = this.board.getNeighbors(this.row, this.col);
+
+            // Check matching number and bomb markings
+            if(this.number > 0) {
+                let marked = 0;
+                for(let n = 0; n < neighbors.length; n++) {
+                    if(neighbors[n].isMarked)
+                        marked++;
+                }
+                // If not equal, cancel operation
+                if(this.number !== marked)
+                    return;
+            }
+
+            // Eventually open neighbor cubes
+            neighbors.forEach(cube => { cube.open(); });
+        }
         
         // Write number to cube
         if(this.number > 0)
             this.el.innerText = this.number;
+        else if(this.isBomb())
+            this.board.lose();
 
         // Updating UI
         this.el.style.border = 'none';

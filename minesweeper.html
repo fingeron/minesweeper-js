@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
     <head>
+        <script src="./event.js"></script>
         <script src="./minesweeper.js"></script>
         <style>
             body {
@@ -22,5 +23,8 @@
     <script>
         let board = document.getElementById('board');
         let game = new Minesweeper(board);
+        game.onStateChange.subscribe((newState, oldState) => {
+            console.log(newState, oldState);
+        });
     </script>
 </html>
